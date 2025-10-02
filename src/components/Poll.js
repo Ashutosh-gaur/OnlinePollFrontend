@@ -3,46 +3,80 @@ import axios from "axios";
 
 export default function PollApp() {
   const [question, setQuestion] = useState("");
-  const [options, setOptions] = useState(["", ""]);
+  const [options, setOptions] = useState([{ text: "" }, { text: "" }]);
   const [polls, setPolls] = useState([]);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editPollId, setEditPollId] = useState(null);
 
   // handle option change
   const handleOptionChange = (value, index) => {
     const newOptions = [...options];
-    newOptions[index] = value;
+    newOptions[index].text = value;
     setOptions(newOptions);
   };
 
   // add new option
-  const addOption = () => {
-    setOptions([...options, ""]);
-  };
+  const addOption = () => setOptions([...options, { text: "" }]);
 
-  const deleteOption = (index) => {
-    if (index < 2) return; 
+  // delete option
+  const deleteOption = async (index) => {
+  if (index < 2) return; // minimum 2 options required
 
-    const newOptions = options.filter((_,i) => i !== index);
-    setOptions(newOptions);
-  };
-
+  const newOptions = options.filter((_, i) => i !== index);
+  setOptions(newOptions);
+  console.log(options);
+};
 
   // create poll
   const createPoll = async () => {
-    if (!question.trim() || options.filter((o) => o.trim()).length < 2) {
+    if (!question.trim() || options.filter((o) => o.text.trim()).length < 2) {
       alert("Please enter a question and at least 2 options");
       return;
     }
-
     try {
-      const res = await axios.post(`${process.env.REACT_APP_BASEURL}/api/polls/createPoll`, {
-        question,
-        options: options.filter((o) => o.trim()).map((opt) => ({ text: opt })),
-      });
+      const res = await axios.post(
+        `${process.env.REACT_APP_BASEURL}/api/polls/createPoll`,
+        {
+          question,
+          options: options.filter((o) => o.text.trim()),
+        }
+      );
       setPolls([...polls, res.data]);
       setQuestion("");
-      setOptions(["", ""]);
+      setOptions([{ text: "" }, { text: "" }]);
+      window.alert("poll created successfully")
     } catch (error) {
       console.error("Error creating poll", error);
+    }
+  };
+
+  // update poll
+  const updatePoll = async () => {
+
+    if (!question.trim() || options.filter((o) => o.text.trim()).length < 2) {
+      alert("Please enter a question and at least 2 options");
+      return;
+    }
+    console.log(options)
+    try {
+      const res = await axios.put(
+        `${process.env.REACT_APP_BASEURL}/api/polls/update/${editPollId}`,
+        {
+          question,
+          options: options.filter((o) => o.text.trim()).map((opt) => ({
+            id: opt.id,
+            text: opt.text,
+          })),
+        }
+      );
+      setPolls(polls.map((p) => (p.id === editPollId ? res.data : p)));
+      setEditModalOpen(false);
+      setEditPollId(null);
+      setQuestion("");
+      setOptions([{ text: "" }, { text: "" }]);
+      window.alert("update Successfully ")
+    } catch (error) {
+      console.error("Error updating poll", error);
     }
   };
 
@@ -52,23 +86,43 @@ export default function PollApp() {
       const res = await axios.get(
         `${process.env.REACT_APP_BASEURL}/api/polls/${pollId}/vote/${optionId}`
       );
-      const updatedPolls = polls.map((p) =>
-        p.id === res.data.id ? res.data : p
-      );
-      setPolls(updatedPolls);
+      setPolls(polls.map((p) => (p.id === res.data.id ? res.data : p)));
     } catch (error) {
       console.error("Error voting", error);
     }
   };
 
-  // fetch all polls
   const fetchPolls = async () => {
     try {
-      const res = await axios.get(`${process.env.REACT_APP_BASEURL}/api/polls/getPolls`);
+      const res = await axios.get(
+        `${process.env.REACT_APP_BASEURL}/api/polls/getPolls`
+      );
       setPolls(res.data);
-    } catch (err) {
-      console.error("Error fetching polls", err);
+    } catch (error) {
+      console.error("Error fetching polls", error);
     }
+  };
+
+  // delete poll
+  const deletePoll = async (pollId) => {
+    if (!window.confirm("Are you sure you want to delete this poll?")) return;
+    try {
+      await axios.delete(`${process.env.REACT_APP_BASEURL}/api/polls/remove/${pollId}`);
+      setPolls(polls.filter((p) => p.id !== pollId));
+    } catch (error) {
+      console.error("Error deleting poll", error);
+    }
+  };
+
+  // open modal with poll data
+  const editPoll = (poll) => {
+    setQuestion(poll.question);
+    setOptions(poll.options.map((o) => ({
+      id: o.id,
+      text: o.text,
+    })));
+    setEditPollId(poll.id);
+    setEditModalOpen(true);
   };
 
   useEffect(() => {
@@ -97,16 +151,15 @@ export default function PollApp() {
               type="text"
               placeholder={`Option ${index + 1}`}
               className="flex-1 border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-green-500"
-              value={opt}
+              value={opt.text}
               onChange={(e) => handleOptionChange(e.target.value, index)}
             />
-            {/* Show delete button only for options after 2nd one */}
             {index >= 2 && (
               <button
-                 onClick={() => deleteOption(index)}
+                onClick={() => deleteOption(index)}
                 className="bg-red-500 text-white text-lg flex items-center justify-center min-w-7 min-h-7 rounded-full hover:bg-red-600 transition"
               >
-               ⨯
+                ⨯
               </button>
             )}
           </div>
@@ -159,7 +212,6 @@ export default function PollApp() {
                       ? ((opt.votes / totalVotes) * 100).toFixed(1)
                       : 0;
 
-                  //  Dynamic bar colors
                   const barColors = [
                     "bg-blue-500",
                     "bg-green-500",
@@ -195,11 +247,87 @@ export default function PollApp() {
                 <p className="text-sm text-gray-500 mt-4">
                   Total votes: {totalVotes}
                 </p>
+
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={() => editPoll(poll)}
+                    className="flex-1 bg-yellow-500 text-white py-2 rounded-lg hover:bg-yellow-600 transition"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => deletePoll(poll.id)}
+                    className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition"
+                  >
+                    ❌ Delete
+                  </button>
+                </div>
               </div>
             );
           })
         )}
       </div>
+
+      {/* EDIT MODAL */}
+      {editModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white rounded-2xl shadow-lg w-full max-w-lg p-6">
+            <h2 className="text-2xl font-bold mb-4 text-center text-blue-600">
+              ✏️ Edit Poll
+            </h2>
+
+            <input
+              type="text"
+              placeholder="Edit poll question"
+              className="w-full border rounded-lg p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+            />
+
+            {options.map((opt, index) => (
+              <div key={index} className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder={`Option ${index + 1}`}
+                  className="flex-1 border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  value={opt.text}
+                  onChange={(e) => handleOptionChange(e.target.value, index)}
+                />
+                {index >= 2 && (
+                  <button
+                    onClick={() => deleteOption(index)}
+                    className="bg-red-500 text-white text-lg flex items-center justify-center min-w-7 min-h-7 rounded-full hover:bg-red-600 transition"
+                  >
+                    ⨯
+                  </button>
+                )}
+              </div>
+            ))}
+
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={addOption}
+                className="flex-1 bg-yellow-400 text-white font-semibold py-2 rounded-xl hover:bg-yellow-500 transition"
+              >
+                ➕ Add Option
+              </button>
+              <button
+                onClick={updatePoll}
+                className="flex-1 bg-blue-600 text-white font-semibold py-2 rounded-xl hover:bg-blue-700 transition"
+              >
+                💾 Save Changes
+              </button>
+            </div>
+
+            <button
+              onClick={() => setEditModalOpen(false)}
+              className="mt-4 w-full bg-gray-500 text-white py-2 rounded-xl hover:bg-gray-600 transition"
+            >
+              ❌ Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
